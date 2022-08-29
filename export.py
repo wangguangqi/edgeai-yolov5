@@ -86,7 +86,7 @@ def export_onnx(model, img, file, opset, train, dynamic, simplify, output_names=
         print(f'{prefix} export failure: {e}')
 
 
-def export_prototxt(model, img, file,simple_search):
+def export_prototxt(model, img, file, simple_search):
     # Prototxt export for a given ONNX model
     prefix = colorstr('Prototxt:')
     onnx_model_name = str(file.with_suffix('.onnx'))
