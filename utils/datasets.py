@@ -59,7 +59,9 @@ def exif_size(img):
 def create_dataloader(path, imgsz, batch_size, stride, opt, hyp=None, augment=False, cache=False, pad=0.0, rect=False,
                       rank=-1, world_size=1, workers=8, image_weights=False, quad=False, prefix='', tidl_load=False, kpt_label=False):
     # Make sure only the first process in DDP process the dataset first, and the following others can use the cache
+    # 只有主线程去读取数据，其他线程等待主线程读取数据
     with torch_distributed_zero_first(rank):
+        # 可以看到 数据读取部分的函数 为该函数LoadImagesAndLabels
         dataset = LoadImagesAndLabels(path, imgsz, batch_size,
                                       augment=augment,  # augment images
                                       hyp=hyp,  # augmentation hyperparameters
@@ -72,7 +74,7 @@ def create_dataloader(path, imgsz, batch_size, stride, opt, hyp=None, augment=Fa
                                       prefix=prefix,
                                       tidl_load=tidl_load,
                                       kpt_label=kpt_label)
-
+    # 如果图片的数量少于batch_size了，那么九按照图片的数量当作batch_size
     batch_size = min(batch_size, len(dataset))
     nw = min([os.cpu_count() // world_size, batch_size if batch_size > 1 else 0, workers])  # number of workers
     sampler = torch.utils.data.distributed.DistributedSampler(dataset) if rank != -1 else None
@@ -362,9 +364,10 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         self.path = path
         self.kpt_label = kpt_label
         self.flip_index = [0, 2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15]
-
+        # 获取数据集路径下的文件名称
         try:
             f = []  # image files
+            # 如果p是列表，则直接遍历，否则的话 把p转换为列表再遍历
             for p in path if isinstance(path, list) else [path]:
                 p = Path(p)  # os-agnostic
                 if p.is_dir():  # dir
@@ -392,25 +395,31 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             raise Exception(f'{prefix}Error loading data from {path}: {e}\nSee {help_url}')
 
         # Check cache
+        # image2label_paths函数的作用就是把*.jpg -> *.txt
         self.label_files = img2label_paths(self.img_files)  # labels
         cache_path = (p if p.is_file() else Path(self.label_files[0]).parent).with_suffix('.cache')  # cached labels
+        # 如果缓存存在，那么就读取缓存字典，否则就创建缓存
         if cache_path.is_file():
             cache, exists = torch.load(cache_path), True  # load
             if cache['hash'] != get_hash(self.label_files + self.img_files) or 'version' not in cache:  # changed
                 cache, exists = self.cache_labels(cache_path, prefix, self.kpt_label), False  # re-cache
         else:
+            # 如果缓存不存在，那么使用self.cache_labels函数去创建缓存，该函数会返回一个字典{'hash':xxx,'results':xxx,'msgs':xxx,'version':xxx,'文件':xxx}
+            # 重点是result保存了对数据处理的结果
             cache, exists = self.cache_labels(cache_path, prefix, self.kpt_label), False  # cache
 
         # Display cache
+        # nf是文件找到并且完好的个数，n是总数，其他是文件损坏给或者丢失的个数
         nf, nm, ne, nc, n = cache.pop('results')  # found, missing, empty, corrupted, total
+        # 当缓存存在的时候，读取缓存数据
         if exists:
             d = f"Scanning '{cache_path}' images and labels... {nf} found, {nm} missing, {ne} empty, {nc} corrupted"
             tqdm(None, desc=prefix + d, total=n, initial=n)  # display cache results
         assert nf > 0 or not augment, f'{prefix}No labels in {cache_path}. Can not train without labels. See {help_url}'
 
         # Read cache
-        cache.pop('hash')  # remove hash
-        cache.pop('version')  # remove version
+        [cache.pop(k) for k in ('hash', 'version')]  # remove items
+        # .values返回字典所有的值  现在字典只剩下 x[im_file]，当时在存x[im_file]使用zip打包存值，现在就可以解压缩取值
         labels, shapes, self.segments = zip(*cache.values())
         self.labels = list(labels)
         self.shapes = np.array(shapes, dtype=np.float64)
@@ -420,6 +429,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             for x in self.labels:
                 x[:, 0] = 0
 
+        # 初始化参数
         n = len(shapes)  # number of images
         bi = np.floor(np.arange(n) / batch_size).astype(np.int)  # batch index
         nb = bi[-1] + 1  # number of batches
@@ -428,7 +438,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         self.indices = range(n)
 
         # Rectangular Training
-        if self.rect:
+        if self.rect: # 采用矩形训练
             # Sort by aspect ratio
             s = self.shapes  # wh
             ar = s[:, 1] / s[:, 0]  # aspect ratio
@@ -454,6 +464,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                 self.batch_shapes = (np.array(shapes) * img_size / stride + pad).astype(np.int) * stride
         # Cache images into memory for faster training (WARNING: large datasets may exceed system RAM)
         self.imgs = [None] * n
+        # 内存足够大的时候，把图片进行缓存，加快训练速度
         if cache_images:
             gb = 0  # Gigabytes of cached images
             self.img_hw0, self.img_hw = [None] * n, [None] * n
@@ -465,6 +476,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                 pbar.desc = f'{prefix}Caching images ({gb / 1E9:.1f}GB)'
             pbar.close()
 
+    # 将标签缓存起来
     def cache_labels(self, path=Path('./labels.cache'), prefix='', kpt_label=False):
         # Cache dataset labels, check images and read shapes
         x = {}  # dict
@@ -476,7 +488,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                 im = Image.open(im_file)
                 im.verify()  # PIL verify
                 shape = exif_size(im)  # image size
-                segments = []  # instance segments
+                segments = []  # instance segmentsinstance segments
                 assert (shape[0] > 9) & (shape[1] > 9), f'image size {shape} <10 pixels'
                 assert im.format.lower() in img_formats, f'invalid image format {im.format}'
 
@@ -569,20 +581,25 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             img, (h0, w0), (h, w) = load_image(self, index)
             if self. tidl_load:
               h0, w0 = self.img_sizes[index][:-1]   #modify the oroginal size for tidll loaded images
-            # Letterbox
+            # Letterbox 矩形训练 根据self.rect 判断是否需要矩形训练
+            # 判断是否采用矩形训练，如果采用矩形训练那么则需要获取当前图片矩形的大小，否则是正方形训练（通过自己设置大小）
             shape = self.batch_shapes[self.batch[index]] if self.rect else self.img_size  # final letterboxed shape
+            # 将放缩后缺失的地方填充起来，要用(114,114,114)
             before_shape = img.shape
             letterbox1 = letterbox(img, shape, auto=False, scaleup=self.augment)
             img, ratio, pad = letterbox1
             shapes = (h0, w0), ((h / h0, w / w0), pad)  # for COCO mAP rescaling
 
+            # Load labels
             labels = self.labels[index].copy()
-            if labels.size:  # normalized xywh to pixel xyxy format
+            # 因为图片进行过了缩放，所以标注的文件也要进行缩放
+            if labels.size:  # normalized xywh to pixel xyxy format 根据pad调整框的标签坐标，并从归一化的xywh->未归一化的xyxy  
                 labels[:, 1:] = xywhn2xyxy(labels[:, 1:], ratio[0] * w, ratio[1] * h, padw=pad[0], padh=pad[1], kpt_label=self.kpt_label)
 
         if self.augment:
             # Augment imagespace
             if not mosaic:
+                # 对图片进行透视变换
                 img, labels = random_perspective(img, labels,
                                                  degrees=hyp['degrees'],
                                                  translate=hyp['translate'],
@@ -644,6 +661,16 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
     @staticmethod
     def collate_fn(batch):
+        """
+            该函数的输入就是 batch* __getitem__的输出
+            这个函数会在create_dataloader中生成dataloader时调用
+            整理函数 将image和label整合到一起
+            : return torch.stack(img, 0): 如[16,3,640,640]整个batch的图片
+            : return torch.cat(label, 0): 如[15,40] [num_target,img_index+class_index+xywh(normalized)] 整个batch的label
+            : return path:整个batch的所有图片的路径
+            : return shapes: (h0, w0),  ((h / h0, w / w0),pad)   for COCO mAP rescaling
+
+        """
         img, label, path, shapes = zip(*batch)  # transposed
         for i, l in enumerate(label):
             l[:, 0] = i  # add target image index for build_targets()
@@ -678,17 +705,21 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
 # Ancillary functions --------------------------------------------------------------------------------------------------
 def load_image(self, index):
+    # 读取图片，并将图片进行缩放成img_size大小
     # loads 1 image from dataset, returns img, original hw, resized hw
     img = self.imgs[index]
     if img is None:  # not cached
         path = self.img_files[index]
         img = cv2.imread(path)  # BGR
         assert img is not None, 'Image Not Found ' + path
+        # 图片原的宽高
         h0, w0 = img.shape[:2]  # orig hw
+        # 把图片进行缩放
         r = self.img_size / max(h0, w0)  # resize image to img_size
         if r != 1:  # always resize down, only resize up if training with augmentation
             # if r<1:
             #     print("resize ratio:", r)
+            # 如果需要缩放，那么要等比缩放保持图片不变形
             interp = cv2.INTER_AREA if r < 1 and not self.augment else cv2.INTER_LINEAR
             img = cv2.resize(img, (int(w0 * r), int(h0 * r)), interpolation=interp)
         return img, (h0, w0), img.shape[:2]  # img, hw_original, hw_resized
@@ -723,20 +754,25 @@ def hist_equalize(img, clahe=True, bgr=False):
 
 def load_mosaic(self, index):
     # loads images in a 4-mosaic
-
+    # 使用是4张图片的马赛克增强
     labels4, segments4 = [], []
+    # 图片的大小，即四张图片拼在一起的大小
     s = self.img_size
+    # 随机选出xc和yc，这(xc,yc)是大图的中心位置。除了输入图片外，再随机挑选三张图片，索引号为idices.
     yc, xc = [int(random.uniform(-x, 2 * s + x)) for x in self.mosaic_border]  # mosaic center x, y
     indices = [index] + random.choices(self.indices, k=3)  # 3 additional image indices
     for i, index in enumerate(indices):
-        # Load image
+        # Load image 调用 load_image函数获取img图片原大小h0w0,和输入大小hw
         img, _, (h, w) = load_image(self, index)
-
+        # 把 挑选的四张图片分别放在左上，左下，右上和右下四个位置
         # place img in img4
-        if i == 0:  # top left
+        if i == 0:  # top left 右下角坐标的固定
             img4 = np.full((s * 2, s * 2, img.shape[2]), 114, dtype=np.uint8)  # base image with 4 tiles
+            # x1a,y1a为左上角的坐标， x2a,y2a为右下角的坐标在大图的坐标
             x1a, y1a, x2a, y2a = max(xc - w, 0), max(yc - h, 0), xc, yc  # xmin, ymin, xmax, ymax (large image)
+            # x1b, y1b 左上角坐标，x2b, y2b右下角坐标，在小图的坐标
             x1b, y1b, x2b, y2b = w - (x2a - x1a), h - (y2a - y1a), w, h  # xmin, ymin, xmax, ymax (small image)
+        # 理解好了i=0的情况，下面的都是类似的操作，只是说固定的坐标不一样，反正就是一点，中心点的坐标是固定的
         elif i == 1:  # top right
             x1a, y1a, x2a, y2a = xc, max(yc - h, 0), min(xc + w, s * 2), yc
             x1b, y1b, x2b, y2b = 0, h - (y2a - y1a), min(w, x2a - x1a), h
@@ -747,25 +783,31 @@ def load_mosaic(self, index):
             x1a, y1a, x2a, y2a = xc, yc, min(xc + w, s * 2), min(s * 2, yc + h)
             x1b, y1b, x2b, y2b = 0, 0, min(w, x2a - x1a), min(y2a - y1a, h)
 
+        # 把小图放到大图里面的，小图和大图的坐标都已经经过计算裁剪了
         img4[y1a:y2a, x1a:x2a] = img[y1b:y2b, x1b:x2b]  # img4[ymin:ymax, xmin:xmax]
+        # 如果小图宽度不够  或者高度不够 则需要padding
         padw = x1a - x1b
         padh = y1a - y1b
-
+        # 四个图的label处理：进行缩放和拼接
         # Labels
         labels, segments = self.labels[index].copy(), self.segments[index].copy()
         if labels.size:
             labels[:, 1:] = xywhn2xyxy(labels[:, 1:], w, h, padw, padh, kpt_label=self.kpt_label)  # normalized xywh to pixel xyxy format
             segments = [xyn2xy(x, w, h, padw, padh) for x in segments]
+        # 把该张图片的所有标签存起来，放到labels4里面去
         labels4.append(labels)
         segments4.extend(segments)
 
     # Concat/clip labels
+    # 对标签进行一些处理，有的可能已经被截取了，存在的需要合并
+    # labels4 （ 4*labels ）
     labels4 = np.concatenate(labels4, 0)
     for x in (labels4[:, 1:], *segments4):
         np.clip(x, 0, 2 * s, out=x)  # clip when using random_perspective()
     # img4, labels4 = replicate(img4, labels4)  # replicate
 
     # Augment
+    # 随机透视变换 通过透视变换矩阵对mosaic整合后的图片进行随机旋转、缩放、平移、裁剪，透视变换，最后将大图进行resize= img_size，详细的可以去看看opencv相关的教程
     img4, labels4 = random_perspective(img4, labels4, segments4,
                                        degrees=self.hyp['degrees'],
                                        translate=self.hyp['translate'],

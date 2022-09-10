@@ -1,16 +1,19 @@
 # This file contains modules common to various models
+"""
+    Common modules
+    这个模块存放着yolov5网络搭建常见Common模块
+"""
+import math # 数学函数模块
+from copy import copy # 数据拷贝模块，分为浅拷贝和深拷贝
+from pathlib import Path  # Path将str转换为Path对象，使字符串路径易于操作的模块
 
-import math
-from copy import copy
-from pathlib import Path
-
-import numpy as np
-import pandas as pd
-import requests
-import torch
-import torch.nn as nn
-from PIL import Image
-from torch.cuda import amp
+import numpy as np # numpy数组操作模块
+import pandas as pd # panda数组操作模块
+import requests # python的HTTP客户端库
+import torch # pytorch 深度学习框架
+import torch.nn as nn # 专门为神经网络设计的模块化接口
+from PIL import Image # 图像基础操作模块
+from torch.cuda import amp # 混合精度训练模块
 
 from utils.datasets import letterbox
 from utils.general import non_max_suppression, non_max_suppression_export, make_divisible, scale_coords, increment_path, xyxy2xywh, save_one_box
@@ -19,6 +22,7 @@ from utils.torch_utils import time_synchronized
 import warnings
 
 def autopad(k, p=None):  # kernel, padding
+    
     # Pad to 'same'
     if p is None:
         p = k // 2 if isinstance(k, int) else [x // 2 for x in k]  # auto-pad

@@ -5,17 +5,19 @@
 #     /coco
 #     /yolov5
 
-
+# 数据配置文件，存放着数据集路径root,训练集，验证集，测试集地址，类别个数，类别名，下载地址等信息。
 # download command/URL (optional)
 download: bash data/scripts/get_coco.sh
-
+# 数据集源路径root、训练集、验证集、测试集地址
 # train and val data as 1) directory: path/images/, 2) file: path/images.txt, or 3) list: [path1/images/, path2/images/]
 train: ../coco/train2017.txt  # 118287 images
 val: ../coco/val2017.txt  # 5000 images
 test: ../coco/test-dev2017.txt  # 20288 of 40670 images, submit to https://competitions.codalab.org/competitions/20794
 
+
+# 数据集类别信息
 # number of classes
-nc: 80
+nc: 80  # 数据集类别数量
 
 # class names
 names: [ 'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light',
