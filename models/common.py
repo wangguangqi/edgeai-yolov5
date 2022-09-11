@@ -21,7 +21,7 @@ from utils.plots import colors, plot_one_box
 from utils.torch_utils import time_synchronized
 import warnings
 
-from models.Models.muitlbackbone import C3STR
+from models.Models.muitlbackbone import C3STR,CoT3
 from models.Models.mobileone import MobileOneBlock
 def autopad(k, p=None):  # kernel, padding
     
