@@ -10,13 +10,17 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            "args": [
-                "--data", "data/coco_kpts.yaml",
-                "--cfg", "models/hub/yolov5n6_kpts.yaml",
-                "--weights","yolov5n6.pt",
-                "--batch-size","4",
-                "--img","640",
-                "--kpt-label"
+        //     "args": [
+        //         "--data", "data/coco_kpts.yaml",
+        //         "--cfg", "models/hub/yolov5s6_kpts.yaml",
+        //         "--weights","yolov5s6.pt",
+        //         "--batch-size","4",
+        //         "--img","640",
+        //         "--kpt-label"
+        //    ]
+           "args": [
+            "--cfg", "models/hub/yolov5n6_C3STR_kpts.yaml",
+            "--device","0",
            ]
         }
     ]
