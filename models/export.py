@@ -22,6 +22,7 @@ from models.experimental import attempt_load
 from utils.activations import Hardswish, SiLU
 from utils.general import colorstr, check_img_size, check_requirements, file_size, set_logging
 from utils.torch_utils import select_device
+import pandas as pd
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -150,3 +151,18 @@ if __name__ == '__main__':
 
     # Finish
     print(f'\nExport complete ({time.time() - t:.2f}s). Visualize with https://github.com/lutzroeder/netron.')
+    
+def export_formats():
+    # YOLOv5 export formats
+    x = [['PyTorch', '-', '.pt'],
+         ['TorchScript', 'torchscript', '.torchscript'],
+         ['ONNX', 'onnx', '.onnx'],
+         ['OpenVINO', 'openvino', '_openvino_model'],
+         ['TensorRT', 'engine', '.engine'],
+         ['CoreML', 'coreml', '.mlmodel'],
+         ['TensorFlow SavedModel', 'saved_model', '_saved_model'],
+         ['TensorFlow GraphDef', 'pb', '.pb'],
+         ['TensorFlow Lite', 'tflite', '.tflite'],
+         ['TensorFlow Edge TPU', 'edgetpu', '_edgetpu.tflite'],
+         ['TensorFlow.js', 'tfjs', '_web_model']]
+    return pd.DataFrame(x, columns=['Format', 'Argument', 'Suffix'])

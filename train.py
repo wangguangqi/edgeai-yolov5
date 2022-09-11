@@ -7,6 +7,7 @@ import time
 from copy import deepcopy
 from pathlib import Path
 from threading import Thread
+from xmlrpc.client import boolean
 
 import numpy as np
 import torch.distributed as dist
@@ -366,7 +367,8 @@ def train(hyp, opt, device, tb_writer=None):
                                                  wandb_logger=wandb_logger,
                                                  compute_loss=compute_loss,
                                                  is_coco=is_coco,
-                                                 kpt_label=kpt_label)
+                                                 kpt_label=kpt_label,
+                                                 half=not opt.acmix)
 
             # Write
             with open(results_file, 'a') as f:
@@ -495,6 +497,8 @@ if __name__ == '__main__':
     parser.add_argument('--save_period', type=int, default=-1, help='Log model after every "save_period" epoch')
     parser.add_argument('--artifact_alias', type=str, default="latest", help='version of dataset artifact to be used')
     parser.add_argument('--kpt-label', action='store_true', help='use keypoint labels for training')
+    parser.add_argument('--acmix',type=boolean,default=False, help='useacmix')
+
     opt = parser.parse_args()
 
     # Set DDP variables

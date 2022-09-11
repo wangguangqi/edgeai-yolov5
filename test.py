@@ -17,7 +17,9 @@ from utils.metrics import ap_per_class, ConfusionMatrix
 from utils.plots import plot_images, output_to_target, plot_study_txt
 from utils.torch_utils import select_device, time_synchronized
 import cv2
-
+import logging
+logger = logging.getLogger(__name__)
+from models.common import DetectMultiBackend
 
 def test(data,
          weights=None,
@@ -46,12 +48,14 @@ def test(data,
          tidl_load=False,
          dump_img=False,
          kpt_label=False,
-         flip_test=False):
+         flip_test=False,
+         half=True):
     # Initialize/load model and set device
     training = model is not None
     if training:  # called by train.py
-        device = next(model.parameters()).device  # get model device
-
+        device, pt, jit, engine = next(model.parameters()).device, True, False, False   # get model device
+        half &= device.type != 'cpu'  # half precision only supported on CUDA
+        model.half() if half else model.float()
     else:  # called directly
         set_logging()
         device = select_device(opt.device, batch_size=batch_size)
@@ -68,6 +72,20 @@ def test(data,
         # Multi-GPU disabled, incompatible with .half() https://github.com/ultralytics/yolov5/issues/99
         # if device.type != 'cpu' and torch.cuda.device_count() > 1:
         #     model = nn.DataParallel(model)
+        # model = DetectMultiBackend(weights, device=device, dnn=False, data=data)
+        # stride, pt, jit, onnx, engine = model.stride, model.pt, model.jit, model.onnx, model.engine
+        # imgsz = check_img_size(imgsz, s=stride)  # check image size
+        # half &= (pt or jit or onnx or engine) and device.type != 'cpu'  # FP16 supported on limited backends with CUDA
+        # if pt or jit:
+        #     model.model.half() if half else model.model.float()
+        # elif engine:
+        #     batch_size = model.batch_size
+        # else:
+        #     half = False
+        #     batch_size = 1  # export.py models default to batch-size 1
+        #     device = torch.device('cpu')
+        #     logger.info(f'Forcing --batch-size 1 square inference shape(1,3,{imgsz},{imgsz}) for non-PyTorch backends')
+
 
     # Half
     half = device.type != 'cpu' and half_precision  # half precision only supported on CUDA
@@ -95,6 +113,7 @@ def test(data,
     if not training:
         if device.type != 'cpu':
             model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model.parameters())))  # run once
+        model.warmup(imgsz=(1 if pt else batch_size, 3, imgsz, imgsz), half=half)     
         task = opt.task if opt.task in ('train', 'val', 'test') else 'val'  # path to train/val/test images
         dataloader = create_dataloader(data[task], imgsz, batch_size, gs, opt, pad=0.5, rect=True,
                                        prefix=colorstr(f'{task}: '), tidl_load=tidl_load, kpt_label=kpt_label)[0]
@@ -386,6 +405,7 @@ if __name__ == '__main__':
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--kpt-label', action='store_true', help='Whether kpt-label is enabled or not')
     parser.add_argument('--flip-test', action='store_true', help='Whether to run flip_test or not')
+    parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     opt = parser.parse_args()
     opt.save_json |= opt.data.endswith('coco.yaml')
     opt.save_json_kpt |= opt.data.endswith('coco_kpts.yaml')
@@ -414,23 +434,26 @@ if __name__ == '__main__':
              dump_img = opt.dump_img,
              kpt_label = opt.kpt_label,
              flip_test = opt.flip_test,
+             half=opt.half
              )
+    else:
+        weights = opt.weights if isinstance(opt.weights, list) else [opt.weights]
+        opt.half = True  # FP16 for fastest results
+        if opt.task == 'speed':  # speed benchmarks
+            for w in opt.weights:
+                test(opt.data, w, opt.batch_size, opt.img_size, 0.25, 0.45, save_json=False, plots=False, opt=opt,half=opt.half)
 
-    elif opt.task == 'speed':  # speed benchmarks
-        for w in opt.weights:
-            test(opt.data, w, opt.batch_size, opt.img_size, 0.25, 0.45, save_json=False, plots=False, opt=opt)
-
-    elif opt.task == 'study':  # run over a range of settings and save/plot
-        # python test.py --task study --data coco.yaml --iou 0.7 --weights yolov5s.pt yolov5m.pt yolov5l.pt yolov5x.pt
-        x = list(range(256, 1536 + 128, 128))  # x axis (image sizes)
-        for w in opt.weights:
-            f = f'study_{Path(opt.data).stem}_{Path(w).stem}.txt'  # filename to save to
-            y = []  # y axis
-            for i in x:  # img-size
-                print(f'\nRunning {f} point {i}...')
-                r, _, t = test(opt.data, w, opt.batch_size, i, opt.conf_thres, opt.iou_thres, opt.save_json,
-                               plots=False, opt=opt)
-                y.append(r + t)  # results and times
-            np.savetxt(f, y, fmt='%10.4g')  # save
-        os.system('zip -r study.zip study_*.txt')
-        plot_study_txt(x=x)  # plot
+        elif opt.task == 'study':  # run over a range of settings and save/plot
+            # python test.py --task study --data coco.yaml --iou 0.7 --weights yolov5s.pt yolov5m.pt yolov5l.pt yolov5x.pt
+            x = list(range(256, 1536 + 128, 128))  # x axis (image sizes)
+            for w in opt.weights:
+                f = f'study_{Path(opt.data).stem}_{Path(w).stem}.txt'  # filename to save to
+                y = []  # y axis
+                for i in x:  # img-size
+                    print(f'\nRunning {f} point {i}...')
+                    r, _, t = test(opt.data, w, opt.batch_size, i, opt.conf_thres, opt.iou_thres, opt.save_json,
+                                plots=False, opt=opt,half=opt.half)
+                    y.append(r + t)  # results and times
+                np.savetxt(f, y, fmt='%10.4g')  # save
+            os.system('zip -r study.zip study_*.txt')
+            plot_study_txt(x=x)  # plot

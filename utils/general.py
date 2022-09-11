@@ -1,5 +1,6 @@
 # YOLOv5 general utils
 
+from asyncio.log import logger
 import glob
 import logging
 import math
@@ -23,6 +24,8 @@ import yaml
 from utils.google_utils import gsutil_getsize
 from utils.metrics import fitness
 from utils.torch_utils import init_torch_seeds
+import pkg_resources as pkg
+from subprocess import check_output
 
 # Settings
 torch.set_printoptions(linewidth=320, precision=5, profile='long')
@@ -30,7 +33,8 @@ np.set_printoptions(linewidth=320, formatter={'float_kind': '{:11.5g}'.format}) 
 pd.options.display.max_columns = 10
 cv2.setNumThreads(0)  # prevent OpenCV from multithreading (incompatible with PyTorch DataLoader)
 os.environ['NUMEXPR_MAX_THREADS'] = str(min(os.cpu_count(), 8))  # NumExpr max threads
-
+FILE = Path(__file__).resolve()
+ROOT = FILE.parents[1]  # YOLOv5 root directory
 
 def set_logging(rank=-1, verbose=True):
     logging.basicConfig(
@@ -721,3 +725,65 @@ def increment_path(path, exist_ok=False, sep='', mkdir=False):
     if not dir.exists() and mkdir:
         dir.mkdir(parents=True, exist_ok=True)  # make directory
     return path
+
+def check_suffix(file='yolov5s.pt', suffix=('.pt',), msg=''):
+    # Check file(s) for acceptable suffix
+    if file and suffix:
+        if isinstance(suffix, str):
+            suffix = [suffix]
+        for f in file if isinstance(file, (list, tuple)) else [file]:
+            s = Path(f).suffix.lower()  # file suffix
+            if len(s):
+                assert s in suffix, f"{msg}{f} acceptable suffix is {suffix}"
+
+def check_version(current='0.0.0', minimum='0.0.0', name='version ', pinned=False, hard=False, verbose=False):
+    # Check version vs. required version
+    current, minimum = (pkg.parse_version(x) for x in (current, minimum))
+    result = (current == minimum) if pinned else (current >= minimum)  # bool
+    s = f'{name}{minimum} required by YOLOv5, but {name}{current} is currently installed'  # string
+    if hard:
+        assert result, s  # assert min requirements met
+    if verbose and not result:
+        logger.warning(s)
+    return result
+
+def check_python(minimum='3.6.2'):
+    # Check current python version vs. required python version
+    check_version(platform.python_version(), minimum, name='Python ', hard=True)
+
+
+
+def check_requirements(requirements=ROOT / 'requirements.txt', exclude=(), install=True):
+    # Check installed dependencies meet requirements (pass *.txt file or list of packages)
+    prefix = colorstr('red', 'bold', 'requirements:')
+    check_python()  # check python version
+    if isinstance(requirements, (str, Path)):  # requirements.txt file
+        file = Path(requirements)
+        assert file.exists(), f"{prefix} {file.resolve()} not found, check failed."
+        with file.open() as f:
+            requirements = [f'{x.name}{x.specifier}' for x in pkg.parse_requirements(f) if x.name not in exclude]
+    else:  # list or tuple of packages
+        requirements = [x for x in requirements if x not in exclude]
+
+    n = 0  # number of packages updates
+    for r in requirements:
+        try:
+            pkg.require(r)
+        except Exception:  # DistributionNotFound or VersionConflict if requirements not met
+            s = f"{prefix} {r} not found and is required by YOLOv5"
+            if install:
+                logger.info(f"{s}, attempting auto-update...")
+                try:
+                    assert check_online(), f"'pip install {r}' skipped (offline)"
+                    logger.info(check_output(f"pip install '{r}'", shell=True).decode())
+                    n += 1
+                except Exception as e:
+                    logger.warning(f'{prefix} {e}')
+            else:
+                logger.info(f'{s}. Please install and rerun your command.')
+
+    if n:  # if packages updated
+        source = file.resolve() if 'file' in locals() else requirements
+        s = f"{prefix} {n} package{'s' * (n > 1)} updated per {source}\n" \
+            f"{prefix} ⚠️ {colorstr('bold', 'Restart runtime or rerun command for updates to take effect')}\n"
+        logger.info(emojis(s))
