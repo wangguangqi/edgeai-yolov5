@@ -19,7 +19,7 @@
         //         "--kpt-label"
         //    ]
            "args": [
-            "--cfg", "models/hub/yolov5n6_C3STR_kpts.yaml",
+            "--cfg", "models/hub/yolov5n6_cotnet_kpts.yaml",
             "--device","0",
            ]
         }
