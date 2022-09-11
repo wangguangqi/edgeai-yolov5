@@ -590,6 +590,10 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
             c2 = ch[f] * args[0] ** 2
         elif m is Expand:
             c2 = ch[f] // args[0] ** 2
+        elif m is MobileOne:
+            c1, c2 = ch[f], args[0]
+            c2 = make_divisible(c2 * gw, 8)
+            args = [c1, c2, n, *args[1:]]
         else:
             # Upsample
             c2 = ch[f]  # args不变

@@ -22,7 +22,7 @@ from utils.torch_utils import time_synchronized
 import warnings
 
 from models.Models.muitlbackbone import C3STR
-
+from models.Models.mobileone import MobileOneBlock
 def autopad(k, p=None):  # kernel, padding
     
     # Pad to 'same'
@@ -470,3 +470,13 @@ class Classify(nn.Module):
         z = torch.cat([self.aap(y) for y in (x if isinstance(x, list) else [x])], 1)  # cat if list
         return self.flat(self.conv(z))  # flatten to x(b,c2)
 
+class MobileOne(nn.Module):
+    # MobileOne
+    def __init__(self, in_channels, out_channels, n, k,
+                 stride=1, dilation=1, padding_mode='zeros', deploy=False, use_se=False):
+        super().__init__()
+        self.m = nn.Sequential(*[MobileOneBlock(in_channels, out_channels, k, stride, deploy) for _ in range(n)])
+
+    def forward(self, x):
+        x = self.m(x)
+        return x
