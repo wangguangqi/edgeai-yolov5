@@ -54,7 +54,7 @@ def test(data,
     training = model is not None
     if training:  # called by train.py
         device, pt, jit, engine = next(model.parameters()).device, True, False, False   # get model device
-        half &= device.type != 'cpu'  # half precision only supported on CUDA
+        # half &= device.type != 'cpu'  # half precision only supported on CUDA
         model.half() if half else model.float()
     else:  # called directly
         set_logging()
@@ -88,7 +88,7 @@ def test(data,
 
 
     # Half
-    half = device.type != 'cpu' and half_precision  # half precision only supported on CUDA
+    # half = device.type != 'cpu' and half_precision  # half precision only supported on CUDA
     if half:
         model.half()
 
