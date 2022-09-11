@@ -21,6 +21,8 @@ from utils.plots import colors, plot_one_box
 from utils.torch_utils import time_synchronized
 import warnings
 
+from models.Models.muitlbackbone import C3STR
+
 def autopad(k, p=None):  # kernel, padding
     
     # Pad to 'same'
@@ -467,3 +469,4 @@ class Classify(nn.Module):
     def forward(self, x):
         z = torch.cat([self.aap(y) for y in (x if isinstance(x, list) else [x])], 1)  # cat if list
         return self.flat(self.conv(z))  # flatten to x(b,c2)
+
