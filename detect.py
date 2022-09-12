@@ -4,6 +4,7 @@ from pathlib import Path
 
 import os
 import copy
+from xmlrpc.client import boolean
 import cv2
 import torch
 import torch.backends.cudnn as cudnn
@@ -30,8 +31,8 @@ def detect(opt):
     # Initialize
     set_logging()
     device = select_device(opt.device)
-    half = device.type != 'cpu' and not save_txt_tidl  # half precision only supported on CUDA
-
+    # half = device.type != 'cpu' and not save_txt_tidl  # half precision only supported on CUDA
+    half = opt.half
     # Load model
     model = attempt_load(weights, map_location=device)  # load FP32 model
     stride = int(model.stride.max())  # model stride
@@ -189,6 +190,7 @@ if __name__ == '__main__':
     parser.add_argument('--hide-labels', default=False, action='store_true', help='hide labels')
     parser.add_argument('--hide-conf', default=False, action='store_true', help='hide confidences')
     parser.add_argument('--kpt-label', action='store_true', help='use keypoint labels')
+    parser.add_argument('--half', type=boolean,default=True, help='use FP16 half-precision inference')
     opt = parser.parse_args()
     print(opt)
     check_requirements(exclude=('tensorboard', 'pycocotools', 'thop'))
