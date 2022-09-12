@@ -19,7 +19,6 @@ from utils.general import make_divisible, check_file, set_logging
 from utils.torch_utils import time_synchronized, fuse_conv_and_bn, model_info, scale_img, initialize_weights, \
     select_device, copy_attr
 
-
 # 导入thop包 用于计算FLOPs
 try:
     import thop  # for FLOPS computation
@@ -593,7 +592,16 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
         elif m is MobileOne:
             c1, c2 = ch[f], args[0]
             c2 = make_divisible(c2 * gw, 8)
-            args = [c1, c2, n, *args[1:]]
+            args = [c1, c2, n, *args[1:]] 
+        elif m is HorBlock:
+            c1, c2 = ch[f], args[0]
+            if c2 != no:
+                c2 = make_divisible(c2 * gw, 8)
+
+            args = [c1, c2, *args[1:]]
+            if m is HorBlock:
+                args.insert(2, n)
+                n = 1       
         else:
             # Upsample
             c2 = ch[f]  # args不变
