@@ -21,7 +21,7 @@ from utils.plots import colors, plot_one_box
 from utils.torch_utils import time_synchronized
 import warnings
 
-from models.Models.muitlbackbone import C3STR,CoT3,CBAM,BoT3,gnconv,HorBlock,ConvNextBlock
+from models.Models.muitlbackbone import C3STR,CoT3,CBAM,BoT3,gnconv,HorBlock,ConvNextBlock,RepVGGBlock
 from models.Models.mobileone import MobileOneBlock
 from utils.general import check_suffix,xywh2xyxy,check_version,check_requirements
 import platform

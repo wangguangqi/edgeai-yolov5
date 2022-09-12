@@ -620,11 +620,16 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
             if m is ConvNextBlock:
                 args.insert(2, n)
                 n = 1
-
-        else:
+        elif m is RepVGGBlock:
+            c1, c2 = ch[f], args[0]
+            if c2 != no:  # if not output
+                c2 = make_divisible(c2 * gw, 8)
+            args = [c1, c2, *args[1:]]
             # Upsample
             c2 = ch[f]  # args不变
 
+        if type(m) is RepVGGBlock:
+            m.switch_to_deploy()
         # m_: 得到当前层module  如果n>1就创建多个m(当前层结构), 如果n=1就创建一个m
         # n只有在[BottleneckCSP, C3, C3TR]中才会用到
         m_ = nn.Sequential(*[m(*args, **args_dict) for _ in range(n)]) if n > 1 else m(*args, **args_dict)  # module
