@@ -21,7 +21,7 @@ from utils.plots import colors, plot_one_box
 from utils.torch_utils import time_synchronized
 import warnings
 
-from models.Models.muitlbackbone import C3STR,CoT3,CBAM
+from models.Models.muitlbackbone import C3STR,CoT3,CBAM,BoT3
 from models.Models.mobileone import MobileOneBlock
 from utils.general import check_suffix,xywh2xyxy,check_version,check_requirements
 import platform
@@ -785,3 +785,5 @@ class DetectMultiBackend(nn.Module):
         xml |= xml2  # *_openvino_model or *.xml
         tflite &= not edgetpu  # *.tflite
         return pt, jit, onnx, xml, engine, coreml, saved_model, pb, tflite, edgetpu, tfjs
+
+
