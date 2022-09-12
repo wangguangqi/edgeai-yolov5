@@ -602,6 +602,25 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
             if m is HorBlock:
                 args.insert(2, n)
                 n = 1       
+        elif m is CNeB:
+            c1, c2 = ch[f], args[0]
+            if c2 != no:
+                c2 = make_divisible(c2 * gw, 8)
+
+            args = [c1, c2, *args[1:]]
+            if m is CNeB:
+                args.insert(2, n)
+                n = 1
+        elif m is ConvNextBlock:
+            c1, c2 = ch[f], args[0]
+            if c2 != no:
+                c2 = make_divisible(c2 * gw, 8)
+
+            args = [c1, c2, *args[1:]]
+            if m is ConvNextBlock:
+                args.insert(2, n)
+                n = 1
+
         else:
             # Upsample
             c2 = ch[f]  # args不变
