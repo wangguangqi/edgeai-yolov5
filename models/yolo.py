@@ -548,7 +548,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
         # depth gain 控制深度  如v5s: n*0.33   n: 当前模块的次数(间接控制深度)
         n = max(round(n * gd), 1) if n > 1 else n  # depth gain
         if m in [Conv, GhostConv, Bottleneck, GhostBottleneck, SPP,SPPF, DWConv, MixConv2d, Focus, ConvFocus, CrossConv, BottleneckCSP,
-                 C3, C3TR,C3STR,CoT3,CBAM,BoT3,ASPP,BasicRFB,SPPCSPC,SPPFCSPC,SPPCSPC_group]:
+                 C3, C3TR,C3STR,CoT3,CBAM,BoT3,ASPP,BasicRFB,SPPCSPC,SPPFCSPC,SPPCSPC_group,ResSPP]:
  
             # c1: 当前层的输入的channel数
             # c2: 当前层的输出的channel数(初定)
@@ -626,8 +626,8 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
                 c2 = make_divisible(c2 * gw, 8)
             args = [c1, c2, *args[1:]]
             # Upsample
-        elif m is ResSPP:
-            c2 = args[1] 
+        # elif m is ResSPP:
+        #     c2 = args[1] 
         elif m is SimSPPF:
             c1, c2 = ch[f], args[0]
             if c2 != no:  # if not output
