@@ -25,6 +25,7 @@ from models.Models.muitlbackbone import C3STR,CoT3,CBAM,BoT3,gnconv,HorBlock,Con
 from models.Models.mobileone import MobileOneBlock
 from models.Models.ppyolo import ResSPP
 from models.Models.yolov4 import SimSPPF
+from models.Models.slimneck import GSConv,VoVGSCSP
 from utils.general import check_suffix,xywh2xyxy,check_version,check_requirements
 import platform
 from collections import OrderedDict, namedtuple

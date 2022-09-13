@@ -552,7 +552,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
         # depth gain 控制深度  如v5s: n*0.33   n: 当前模块的次数(间接控制深度)
         n = max(round(n * gd), 1) if n > 1 else n  # depth gain
         if m in [Conv, GhostConv, Bottleneck, GhostBottleneck, SPP,SPPF, DWConv, MixConv2d, Focus, ConvFocus, CrossConv, BottleneckCSP,
-                 C3, C3TR,C3STR,CoT3,CBAM,BoT3,ASPP,BasicRFB,SPPCSPC,SPPFCSPC,SPPCSPC_group,ResSPP]:
+                 C3, C3TR,C3STR,CoT3,CBAM,BoT3,ASPP,BasicRFB,SPPCSPC,SPPFCSPC,SPPCSPC_group,ResSPP,GSConv,VoVGSCSP]:
  
             # c1: 当前层的输入的channel数
             # c2: 当前层的输出的channel数(初定)
@@ -639,7 +639,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
             args = [c1, *args[1:]]                   
         else:
             c2 = ch[f]  # args不变
-            
+
         if type(m) is RepVGGBlock:
                 m.switch_to_deploy()
         # m_: 得到当前层module  如果n>1就创建多个m(当前层结构), 如果n=1就创建一个m
