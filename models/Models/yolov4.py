@@ -24,8 +24,6 @@ from PIL import Image
 from torch.cuda import amp
 
 from utils.datasets import exif_transpose, letterbox
-from utils.plots import Annotator, colors, save_one_box
-from utils.torch_utils import copy_attr, time_sync
 
 # from utils.utils import *
 
