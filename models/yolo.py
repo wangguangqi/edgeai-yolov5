@@ -548,7 +548,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
         # depth gain 控制深度  如v5s: n*0.33   n: 当前模块的次数(间接控制深度)
         n = max(round(n * gd), 1) if n > 1 else n  # depth gain
         if m in [Conv, GhostConv, Bottleneck, GhostBottleneck, SPP,SPPF, DWConv, MixConv2d, Focus, ConvFocus, CrossConv, BottleneckCSP,
-                 C3, C3TR,C3STR,CoT3,CBAM,BoT3]:
+                 C3, C3TR,C3STR,CoT3,CBAM,BoT3,ASPP,BasicRFB,SPPCSPC,SPPFCSPC,SPPCSPC_group]:
  
             # c1: 当前层的输入的channel数
             # c2: 当前层的输出的channel数(初定)
@@ -566,7 +566,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
 
             # 如果当前层是BottleneckCSP/C3/C3TR, 则需要在args中加入bottleneck的个数
             # [in_channel, out_channel, Bottleneck的个数n, bool(True表示有shortcut 默认，反之无)]
-            if m in [BottleneckCSP, C3, C3TR,CoT3,BoT3]: # 因为这几个类的定义中，初始化中有n=1这个参数，整个过程就是在初始化卷积的参数罢了
+            if m in [BottleneckCSP, C3, C3TR,CoT3,BoT3,SPPCSPC]: # 因为这几个类的定义中，初始化中有n=1这个参数，整个过程就是在初始化卷积的参数罢了
                 args.insert(2, n)  # number of repeats
                 n = 1# 恢复默认值1
             if m in [Conv, GhostConv, Bottleneck, GhostBottleneck, DWConv, MixConv2d, Focus, ConvFocus, CrossConv, BottleneckCSP, C3, C3TR]:
@@ -626,6 +626,13 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
                 c2 = make_divisible(c2 * gw, 8)
             args = [c1, c2, *args[1:]]
             # Upsample
+        elif m is ResSPP:
+            c2 = args[1] 
+        elif m is SimSPPF:
+            c1, c2 = ch[f], args[0]
+            if c2 != no:  # if not output
+                c2 = make_divisible(c2 * gw, 8)  
+            args = [c1, *args[1:]]                   
         else:
             c2 = ch[f]  # args不变
 
