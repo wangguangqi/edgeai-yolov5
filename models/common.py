@@ -965,7 +965,7 @@ class Concat_bifpn(nn.Module):
        # self.w3 = nn.Parameter(torch.ones(3, dtype=torch.float32), requires_grad=True)
         self.epsilon = 0.0001
         self.conv = Conv(c1, c2, 1 ,1 ,0 )
-        self.act= SiLU()
+        self.act= nn.ReLU()
 
     def forward(self, x): # mutil-layer 1-3 layers #ADD or Concat 
         #print("bifpn:",x.shape)
