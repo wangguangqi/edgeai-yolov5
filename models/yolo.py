@@ -183,7 +183,7 @@ class Model(nn.Module):
         # 获取Detect模块的stride(相对输入图像的下采样率)和anchors在当前Detect输出的feature map的尺度
         # Build strides, anchors
         m = self.model[-1]  # Detect()
-        if isinstance(m, Detect):
+        if isinstance(m, Detect) or isinstance(m,Decoupled_Detect):
             s = 256  # 2x min stride
             m.inplace = self.inplace
             # 计算三个feature map下采样的倍率  [8, 16, 32,64]
@@ -192,7 +192,8 @@ class Model(nn.Module):
             # 检查anchor顺序与stride顺序是否一致
             check_anchor_order(m)
             self.stride = m.stride
-            self._initialize_biases()  # only run once
+            if isinstance(m, Detect):
+                self._initialize_biases()  # only run once
             # logger.info('Strides: %s' % m.stride.tolist())
 
         # Init weights, biases
@@ -373,14 +374,15 @@ class DetectionModel(nn.Module):
 
         # Build strides, anchors
         m = self.model[-1]  # Detect()
-        if isinstance(m, Detect):
+        if isinstance(m, Detect) or isinstance(m,Decoupled_Detect):
             s = 256  # 2x min stride
             m.inplace = self.inplace
             m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
             m.anchors /= m.stride.view(-1, 1, 1)
             check_anchor_order(m)
             self.stride = m.stride
-            self._initialize_biases()  # only run once
+            if isinstance(m, Detect):
+                self._initialize_biases()  # only run once
             # logger.info('Strides: %s' % m.stride.tolist())
 
         # Init weights, biases
@@ -582,7 +584,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
         elif m is Concat:
             # Concat层则将f中所有的输出累加得到这层的输出channel
             c2 = sum([ch[x] for x in f]) # 因为这个[[-1, 6], 1, Concat, [1]] 的第一个是个列表，所以需要遍历，然后将-1, 6层的输入加起来
-        elif m is Detect:   # Detect（YOLO Layer）层
+        elif m in [Detect,Decoupled_Detect]:   # Detect（YOLO Layer）层
             # 在args中加入四个Detect层的输出channel
             args.append([ch[x] for x in f])
             if isinstance(args[1], int):  # number of anchors  几乎不执行
@@ -669,6 +671,130 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
         # 把当前层的输出channel数加入ch
         ch.append(c2)
     return nn.Sequential(*layers), sorted(save)
+
+class DecoupledHead(nn.Module):
+    def __init__(self, ch=256, nc=80,  anchors=()):
+        super().__init__()
+        self.nc = nc  # number of classes
+        self.nl = len(anchors)  # number of detection layers
+        self.na = len(anchors[0]) // 2  # number of anchors
+        self.merge = Conv(ch, 256 , 1, 1)
+        self.cls_convs1 = Conv(256 , 256 , 3, 1, 1)
+        self.cls_convs2 = Conv(256 , 256 , 3, 1, 1)
+        self.reg_convs1 = Conv(256 , 256 , 3, 1, 1)
+        self.reg_convs2 = Conv(256 , 256 , 3, 1, 1)
+        self.cls_preds = nn.Conv2d(256 , self.nc * self.na, 1)
+        self.reg_preds = nn.Conv2d(256 , 4 * self.na, 1)
+        self.obj_preds = nn.Conv2d(256 , 1 * self.na, 1)
+
+    def forward(self, x):
+        x = self.merge(x)
+        x1 = self.cls_convs1(x)
+        x1 = self.cls_convs2(x1)
+        x1 = self.cls_preds(x1)
+        x2 = self.reg_convs1(x)
+        x2 = self.reg_convs2(x2)
+        x21 = self.reg_preds(x2)
+        x22 = self.obj_preds(x2)
+        out = torch.cat([x21, x22, x1], 1)
+        return out
+        
+        
+class Decoupled_Detect(nn.Module):
+    stride = None  # strides computed during build
+    export = False  # onnx export
+
+    def __init__(self, nc=80, anchors=(), nkpt=None, ch=(), inplace=True, dw_conv_kpt=False):  # detection layer
+        super().__init__()
+        self.nc = nc  # number of classes
+        self.nkpt = nkpt
+        self.dw_conv_kpt = dw_conv_kpt
+        self.no_det=(nc + 5)  # number of outputs per anchor for box and class
+        self.no_kpt = 3*self.nkpt ## number of outputs per anchor for keypoints
+        self.no = self.no_det+self.no_kpt
+        self.nl = len(anchors)  # number of detection layers
+        self.na = len(anchors[0]) // 2  # number of anchors
+        self.grid = [torch.zeros(1)] * self.nl  # init grid
+        self.flip_test = False    
+        a = torch.tensor(anchors).float().view(self.nl, -1, 2) 
+
+        self.register_buffer('anchors', a)  # shape(nl,na,2)   
+        self.register_buffer('anchor_grid', a.clone().view(self.nl, 1, -1, 1, 1, 2))  # shape(nl,1,na,1,1,2) 
+        
+        # self.m = nn.ModuleList(nn.Conv2d(x, self.no_det * self.na, 1) for x in ch)  # output conv
+        self.m = nn.ModuleList(DecoupledHead(x, nc, anchors) for x in ch)
+        self.inplace = inplace  # use in-place ops (e.g. slice assignment)
+        if self.nkpt is not None:
+            if self.dw_conv_kpt: #keypoint head is slightly more complex
+                self.m_kpt = nn.ModuleList(
+                            nn.Sequential(DWConv(x, x, k=3), Conv(x,x),
+                                          DWConv(x, x, k=3), Conv(x, x),
+                                          DWConv(x, x, k=3), Conv(x,x),
+                                          DWConv(x, x, k=3), Conv(x, x),
+                                          DWConv(x, x, k=3), Conv(x, x),
+                                          DWConv(x, x, k=3), nn.Conv2d(x, self.no_kpt * self.na, 1)) for x in ch)
+            else: #keypoint head is a single convolution
+                self.m_kpt = nn.ModuleList(nn.Conv2d(x, self.no_kpt * self.na, 1) for x in ch)
+        self.inplace = inplace  # use in-place ops (e.g. slice assignment)
+        
+    def forward(self, x):
+        # x = x.copy()  # for profiling
+        z = []  # inference output
+        self.training |= self.export
+        for i in range(self.nl):
+            if self.nkpt is None or self.nkpt==0:
+                x[i] = self.m[i](x[i])
+            else:
+                x[i] = torch.cat((self.m[i](x[i]), self.m_kpt[i](x[i])), axis=1) 
+
+            bs, _, ny, nx = x[i].shape  # x(bs,255,20,20) to x(bs,3,20,20,85)
+            x[i] = x[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()
+            x_det = x[i][..., :6]
+            x_kpt = x[i][..., 6:]
+
+            # inference，预测部分           
+            if not self.training:  # inference
+                # 构造网格
+                # 因为推理返回的不是归一化后的网格偏移量 需要再加上网格的位置 得到最终的推理坐标 再送入nms
+                # 所以这里构建网格就是为了记录每个grid的网格坐标 方面后面使用
+                if self.grid[i].shape[2:4] != x[i].shape[2:4]:
+                    self.grid[i] = self._make_grid(nx, ny).to(x[i].device)
+                kpt_grid_x = self.grid[i][..., 0:1]
+                kpt_grid_y = self.grid[i][..., 1:2]
+
+                if self.nkpt == 0:
+                    y = x[i].sigmoid() # 将每一层的特征归一化到0到1之间
+                else:
+                    y = x_det.sigmoid()
+                
+                if self.inplace:
+                    # 默认执行 不使用AWS Inferentia
+                    # 这里的公式和yolov3、v4中使用的不一样 是yolov5作者自己用的效果更好，边框预测公式，ppt有
+                    # 计算中心点坐标，将0到1之间处理到原图大小的区间
+                    xy = (y[..., 0:2] * 2. - 0.5 + self.grid[i]) * self.stride[i]  # xy ||||| × self.stride[i]是为了放大到原图
+                    # 计算宽高，将0到1之间处理到原图大小的区间
+                    wh = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i].view(1, self.na, 1, 1, 2) # wh
+                    if self.nkpt != 0:
+                        x_kpt[..., 0::3] = (x_kpt[..., ::3] * 2. - 0.5 + kpt_grid_x.repeat(1,1,1,1,17)) * self.stride[i]  # xy
+                        x_kpt[..., 1::3] = (x_kpt[..., 1::3] * 2. - 0.5 + kpt_grid_y.repeat(1,1,1,1,17)) * self.stride[i]  # xy
+                        x_kpt[..., 2::3] = x_kpt[..., 2::3].sigmoid()
+
+                    y = torch.cat((xy, wh, y[..., 4:], x_kpt), dim = -1)                    
+                else:  # for YOLOv5 on AWS Inferentia https://github.com/ultralytics/yolov5/pull/2953
+                    xy = (y[..., 0:2] * 2. - 0.5 + self.grid[i]) * self.stride[i]  # xy
+                    wh = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
+                    if self.nkpt != 0:
+                        y[..., 6:] = (y[..., 6:] * 2. - 0.5 + self.grid[i].repeat((1,1,1,1,self.nkpt))) * self.stride[i]  # xy
+                    y = torch.cat((xy, wh, y[..., 4:]), -1)
+
+                z.append(y.view(bs, -1, self.no))
+
+        return x if self.training else (torch.cat(z, 1),) if self.export else (torch.cat(z, 1), x)
+        
+    @staticmethod
+    def _make_grid(nx=20, ny=20):
+        yv, xv = torch.meshgrid([torch.arange(ny), torch.arange(nx)])
+        return torch.stack((xv, yv), 2).view((1, 1, ny, nx, 2)).float()
 
 
 if __name__ == '__main__':
