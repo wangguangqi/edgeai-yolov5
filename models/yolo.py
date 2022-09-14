@@ -637,7 +637,10 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
             if c2 != no:  # if not output
                 c2 = make_divisible(c2 * gw, 8)  
             args = [c1, *args[1:]]    
-        elif m is Concat_bifpn:
+        # elif m is Concat_bifpn:
+        #     c2 = max([ch[x] for x in f])
+        # # 添加bifpn_add结构
+        elif m in [BiFPN_Add2, BiFPN_Add3]:
             c2 = max([ch[x] for x in f])                  
         else:
             c2 = ch[f]  # args不变
