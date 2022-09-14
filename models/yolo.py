@@ -320,8 +320,8 @@ class Model(nn.Module):
                 m.conv = fuse_conv_and_bn(m.conv, m.bn)  # update conv
                 delattr(m, 'bn')  # remove batchnorm
                 m.forward = m.fuseforward  # update forward
-            # if type(m) is RepVGGBlock:
-            #     m.switch_to_deploy()
+            if type(m) is RepVGGBlock:
+                m.switch_to_deploy()
         self.info()
         return self
 
@@ -476,8 +476,8 @@ class DetectionModel(nn.Module):
                 m.conv = fuse_conv_and_bn(m.conv, m.bn)  # update conv
                 delattr(m, 'bn')  # remove batchnorm
                 m.forward = m.fuseforward  # update forward
-            # if type(m) is RepVGGBlock:
-            #     m.switch_to_deploy()
+            if type(m) is RepVGGBlock:
+                m.switch_to_deploy()
         self.info()
         return self
 
@@ -642,8 +642,8 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
         else:
             c2 = ch[f]  # args不变
 
-        if type(m) is RepVGGBlock:
-            m.switch_to_deploy()
+        # if type(m) is RepVGGBlock:
+        #     m.switch_to_deploy()
         # m_: 得到当前层module  如果n>1就创建多个m(当前层结构), 如果n=1就创建一个m
         # n只有在[BottleneckCSP, C3, C3TR]中才会用到
         m_ = nn.Sequential(*[m(*args, **args_dict) for _ in range(n)]) if n > 1 else m(*args, **args_dict)  # module
